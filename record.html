@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Reading Practice – Editable List</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+ body{font-family:Arial;background:#f6f8ff;margin:0;padding:20px;text-align:center;}
+ h2{margin-top:0}
+ .box{background:white;padding:16px;border-radius:12px;max-width:700px;margin:auto;
+      box-shadow:0 6px 18px rgba(0,0,0,0.08);}
+ input,button,select{font-size:16px;padding:10px;border-radius:8px;border:1px solid #cbd5e1;margin:6px;}
+ button{cursor:pointer}
+ button.add{background:#4f8bff;color:white;border:none}
+ button.start{background:#22c55e;color:white;border:none}
+ button.stop{background:#ef4444;color:white;border:none}
+ audio{width:100%;margin-top:12px}
+ #result{margin-top:12px;font-size:18px;font-weight:bold}
+ .sentence-item{background:#eef2ff;margin:4px;padding:6px;border-radius:8px;
+                 display:flex;justify-content:space-between;align-items:center}
+ .del{background:#ef4444;color:white;border:none;border-radius:6px;padding:4px 8px;font-size:14px}
+</style>
+</head>
+<body>
+
+<div class="box">
+  <h2>🎤 Reading Practice</h2>
+
+  <h3>Add your own sentences</h3>
+  <input id="newSentence" placeholder="Type a sentence..." style="width:70%">
+  <button class="add" onclick="addSentence()">Add</button>
+
+  <h3>Sentence list</h3>
+  <div id="listBox"></div>
+
+  <h3>Choose a sentence to read</h3>
+  <select id="sentenceSelect" style="width:90%"></select>
+
+  <div style="margin-top:10px;">
+    <button class="start" id="startBtn">Start</button>
+    <button class="stop" id="stopBtn" disabled>Stop</button>
+  </div>
+
+  <audio id="audioPlayer" controls></audio>
+  <div id="result"></div>
+</div>
+
+<script>
+let sentences = JSON.parse(localStorage.getItem("sentences")||"[]");
+let stream, recorder, chunks=[], recognition, lastText="";
+
+function save(){
+  localStorage.setItem("sentences",JSON.stringify(sentences));
+}
+
+function renderList(){
+  const box = document.getElementById("listBox");
+  const sel = document.getElementById("sentenceSelect");
+  box.innerHTML = "";
+  sel.innerHTML = "";
+  sentences.forEach((s,i)=>{
+    let row=document.createElement("div");
+    row.className="sentence-item";
+    row.innerHTML = `<span>${s}</span>
+                     <button class="del" onclick="removeSentence(${i})">Del</button>`;
+    box.appendChild(row);
+
+    let opt=document.createElement("option");
+    opt.value=i; opt.textContent=s;
+    sel.appendChild(opt);
+  });
+}
+
+function addSentence(){
+  const txt=document.getElementById("newSentence").value.trim();
+  if(!txt) return;
+  sentences.push(txt);
+  document.getElementById("newSentence").value="";
+  save(); renderList();
+}
+
+function removeSentence(i){
+  sentences.splice(i,1);
+  save(); renderList();
+}
+
+async function initMic(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(e){
+    alert("Please allow microphone access.");
+  }
+}
+
+window.onload=()=>{initMic();renderList();};
+
+// Recording & recognition
+document.getElementById("startBtn").onclick=()=>{
+  if(!sentences.length){alert("Add a sentence first.");return;}
+  chunks=[]; lastText="";
+
+  recorder=new MediaRecorder(stream);
+  recorder.ondataavailable=e=>chunks.push(e.data);
+  recorder.start();
+
+  recognition=new (window.SpeechRecognition||window.webkitSpeechRecognition)();
+  recognition.lang="en-US";
+  recognition.interimResults=true;
+  recognition.continuous=true;
+  recognition.onresult=e=>{
+    lastText=e.results[e.results.length-1][0].transcript.toLowerCase().trim();
+  }
+  recognition.start();
+
+  document.getElementById("startBtn").disabled=true;
+  document.getElementById("stopBtn").disabled=false;
+  document.getElementById("result").innerHTML="Recording...";
+};
+
+document.getElementById("stopBtn").onclick=()=>{
+  recorder.stop();
+  try{recognition.stop();}catch(e){}
+
+  recorder.onstop=()=>{
+    const blob=new Blob(chunks,{type:"audio/webm"});
+    document.getElementById("audioPlayer").src=URL.createObjectURL(blob);
+    scoreSentence();
+  };
+
+  document.getElementById("startBtn").disabled=false;
+  document.getElementById("stopBtn").disabled=true;
+};
+
+function scoreSentence(){
+  const sel=document.getElementById("sentenceSelect");
+  const expected=sentences[sel.value].toLowerCase().replace(/[.,!?]/g,"").trim();
+  const expWords=expected.split(" ");
+  const spoken=lastText.toLowerCase().replace(/[.,!?]/g,"").trim();
+  const spWords=spoken.split(" ");
+
+  let correct=0; let wrong=[];
+  for(let i=0;i<expWords.length;i++){
+    if(spWords[i]===expWords[i]) correct++;
+    else wrong.push(expWords[i]);
+  }
+  const score=Math.round((correct/expWords.length)*10);
+
+  let res=document.getElementById("result");
+  res.innerHTML = `Score: ${score}/10<br>You said: "${lastText}"<br>`;
+  if(wrong.length) res.innerHTML += `Wrong words: <b>${wrong.join(", ")}</b>`;
+}
+</script>
+
+</body>
+</html>
